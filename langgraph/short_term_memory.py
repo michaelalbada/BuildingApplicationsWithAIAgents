@@ -28,6 +28,7 @@ for chunk in graph.stream({"messages": [input_message]}, stream_mode="values"):
 
 from langgraph.checkpoint.memory import MemorySaver
 
+# Memory is now persisted across the graph
 memory = MemorySaver()
 graph = builder.compile(checkpointer=memory)
 
