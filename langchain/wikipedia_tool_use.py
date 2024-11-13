@@ -6,20 +6,6 @@ from langchain_core.messages import HumanMessage
 api_wrapper = WikipediaAPIWrapper(top_k_results=1, doc_content_chars_max=300)
 tool = WikipediaQueryRun(api_wrapper=api_wrapper)
 
-print(tool.name)
-print(tool.description)
-print(tool.args)
-
-# Define the query
-query = "langchain"
-
-# Run the tool with the query and capture the raw response
-wikipedia_response = tool.run({"query": query})
-print("=== Raw Wikipedia Response ===")
-print(wikipedia_response)
-print("===============================\n")
-
-
 # Initialize the LLM with GPT-4o and bind the tools
 llm = ChatOpenAI(model_name="gpt-4o", temperature=0)
 llm_with_tools = llm.bind_tools([tool])
