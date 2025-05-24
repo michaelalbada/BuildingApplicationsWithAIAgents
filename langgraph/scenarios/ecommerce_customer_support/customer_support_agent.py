@@ -62,8 +62,19 @@ def call_model(state: AgentState):
         "- Ask for a photo before refunding damaged items.\n"
         "- Cancel only if status is Processing or Pending Shipment.\n"
         "- Modify address only if status is Pending Shipment.\n\n"
-        "When you choose to act, call exactly one tool. Afterwards, send one plain-text reply "
-        "including key phrases like 'full refund', 'cancelled', 'updated', '3-5 business days'."
+        "... When you act, **first** call exactly ONE backend tool "
+        "(refund / cancel / modify). "
+        "**Immediately afterwards** call `send_customer_message` "
+        "with the confirmation text, and then STOP.\n\n"
+        "Example\n:"
+            "User: 'My order arrived broken. Refund please.'\n"
+            "Assistant (tool_calls): {'name':'issue_refund','arguments':{'order_id':'A12345','amount':19.99}}\n"
+            "Assistant (tool_calls): {'name':'send_customer_message','arguments':{'text':'Your refund of $19.99 has been processed! You'll see it in 3-5 business days.'}}\n"
+        "ALWAYS call exactly two tools in this order:\n"
+        "1) business_action (issue_refund / cancel_order / modify_order)\n"
+        "2) send_customer_message\n"
+        "Then STOP.\n"
+        "Now, handle the real interaction below:\n"
         f"ORDER: {order_json}"
     )
     history = [SystemMessage(content=system_prompt)] + prior
@@ -79,21 +90,23 @@ def execute_tool(state: AgentState):
         outputs.append(ToolMessage(content=str(res), tool_call_id=call["id"]))
     return {"messages": outputs}
 
-def continue_or_end(state: AgentState):
+def should_continue(state: AgentState):
     last = state["messages"][-1]
-    return "tool_step" if getattr(last, "tool_calls", None) else "end"
+    if isinstance(last, AIMessage) and getattr(last, "tool_calls", None):
+        return "execute_tool"         # assistant emitted tool → run it
+    if isinstance(last, ToolMessage):
+        return "assistant"            # run second assistant turn
+    return "end"
 
 def construct_graph():
     g = StateGraph(AgentState)
     g.add_node("assistant", call_model)
-    g.add_node("tool_step", execute_tool)
+    g.add_node("execute_tool", execute_tool)
     g.set_entry_point("assistant")
-    g.add_conditional_edges(
-        "assistant",
-        continue_or_end,
-        {"tool_step": "tool_step", "end": END},
+    g.add_conditional_edges("assistant", should_continue,
+        {"execute_tool": "execute_tool", "assistant": "assistant", "end": END},
     )
-    g.add_edge("tool_step", "assistant")
+    g.add_edge("execute_tool", "assistant")
     return g.compile()
 
 graph = construct_graph()
