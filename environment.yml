@@ -1,0 +1,14 @@
+name: langgraph-insight
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+      - typing_extensions>=4.10
+      - openai>=1.25
+      - tiktoken>=0.5.1
+      - langchain==0.1.20
+      - langchain-openai==0.1.4
+      - langgraph==0.0.28
+

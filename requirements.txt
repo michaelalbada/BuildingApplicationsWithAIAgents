@@ -1,0 +1,12 @@
+# Core language & typing
+typing_extensions>=4.10
+
+# LLM client & tokenizer
+openai>=1.25          # pulled in by langchain-openai but pinned here for clarity
+tiktoken>=0.5.1       # required by OpenAI models for counting tokens
+
+# LangChain + LangGraph
+langchain==0.1.20
+langchain-openai==0.1.4
+langgraph==0.0.28
+
