@@ -12,12 +12,13 @@ from typing import Annotated, Sequence, TypedDict
 from langchain_openai.chat_models import ChatOpenAI
 from langchain.schema import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_core.messages.tool import ToolMessage
+from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 
 from langchain.tools import tool
 from langgraph.graph import StateGraph, END
 
 @tool
-def send_customer_message(text: str) -> str:
+def send_customer_message(order_id: str, text: str) -> str:
     """Send a plain response to the customer."""
     print(f"[TOOL] send_customer_message → {text}")
     return "sent"
@@ -42,7 +43,8 @@ def modify_order(order_id: str, shipping_address: dict) -> str:
 
 TOOLS = [send_customer_message, issue_refund, cancel_order, modify_order]
 
-llm = ChatOpenAI(model="gpt-4o", temperature=0.0).bind_tools(TOOLS)
+llm = ChatOpenAI(model="gpt-4o", temperature=0.0, callbacks=[StreamingStdOutCallbackHandler()],  
+    verbose=True).bind_tools(TOOLS)
 
 class AgentState(TypedDict):
     order: dict
@@ -52,26 +54,31 @@ def call_model(state: AgentState):
     history = state["messages"]
     order_json = json.dumps(state["order"], ensure_ascii=False)
     system_prompt = (
-        "You are a helpful e-commerce support agent. "
+        "You are a helpful e-commerce support agent.\n"
         "When you act, you MUST do exactly TWO steps in order:\n"
         "  1) call one business tool (issue_refund / cancel_order / modify_order)\n"
         "  2) call send_customer_message with confirmation text\n"
         "Then STOP.\n\n"
-        "Example 1 (before photo):\n"
-        "  User: 'My mug arrived broken. Refund please.'\n"
-        "  Assistant (tool_calls): {'name':'send_customer_message','arguments':{'text':'Please send us a quick photo of the damage so we can process a full refund.'}}\n"
-        "  Assistant: 'Please send us a quick photo of the damage so we can process a full refund.'\n\n"
-        "Example 2 (after photo):\n"
-        "  User: 'Sure, here's the photo. *[customer uploads image]*'\n"
-        "  Assistant (tool_calls): {'name':'issue_refund','arguments':{'order_id':'<order_id>','amount':<amount>}}\n"
-        "  Assistant (tool_calls): {'name':'send_customer_message','arguments':{'text':'Your refund of <amount> has been processed! You’ll see it in 3-5 business days.'}}\n"
-        "  Assistant: 'Your refund of <amount> has been processed! You'll see it in 3-5 business days.'\n\n"
         f"ORDER: {order_json}"
     )
+
     full = [SystemMessage(content=system_prompt)] + history
-    # this single invoke will handle both the function call and the follow-up message
-    final_reply = llm.invoke(full)
-    return {"messages": [final_reply]}
+
+    first: ToolMessage | BaseMessage = llm.invoke(full)
+    messages = [first]
+
+    if getattr(first, "tool_calls", None):
+        for tc in first.tool_calls:
+            print(first)
+            print(tc['name'])
+            fn = next(t for t in TOOLS if t.name == tc['name'])
+            out = fn.invoke(tc["args"])
+            messages.append(ToolMessage(content=str(out), tool_call_id=tc["id"]))
+
+        second = llm.invoke(full + messages)
+        messages.append(second)
+
+    return {"messages": messages}
 
 def construct_graph():
     g = StateGraph(AgentState)
