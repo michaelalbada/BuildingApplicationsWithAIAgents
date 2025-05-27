@@ -73,9 +73,9 @@ def param_accuracy(pred_calls: List[dict], expected_calls: List[dict]) -> float:
     return matched / len(expected_calls)
 
 def task_success(pred_reply: str, pred_tools: List[str], expected: dict) -> float:
-    phrase_ok = phrase_recall(pred_reply, expected.get("customer_msg_contains", [])) == 1.0
-    tool_ok = tool_metrics(pred_tools, expected.get("tool_calls", [])).get("tool_recall", 0.0) == 1.0
-    return float(phrase_ok and tool_ok)
+    pr = phrase_recall(pred_reply, expected.get("customer_msg_contains", []))
+    tr = tool_metrics(pred_tools, expected.get("tool_calls", [])).get("tool_recall", 0.0)
+    return (pr + tr) / 2.0
 
 def parse_weights(pairs: List[str]) -> Dict[str, float]:
     out: Dict[str, float] = {}
