@@ -88,17 +88,23 @@ def parse_weights(pairs: List[str]) -> Dict[str, float]:
                 pass
     return out
 
-def run_evaluation(graph, args, weights: Dict[str, float], metrics: Dict[str, List[float]], verbose: bool = False):
-    for raw in pathlib.Path(args.dataset).read_text().splitlines():
-        if not raw.strip():
-            continue
+def evaluate_single_instance(
+    raw: str, graph
+) -> Optional[Dict[str, float]]:
+    """
+    Parse one JSONL line, run the graph, compute metrics, or return None if skipped.
+    """
+    if not raw.strip():
+        return None
+    try:
         ex = json.loads(raw)
         order = ex["order"]
         messages = [to_lc_message(t) for t in ex["conversation"]]
         exp_final = ex["expected"]["final_state"]
 
         result = graph.invoke({"order": order, "messages": messages})
-        # find last assistant message without tool calls
+
+        # Extract final assistant reply
         final_reply = ""
         for msg in reversed(result["messages"]):
             if isinstance(msg, AIMessage):
@@ -106,44 +112,55 @@ def run_evaluation(graph, args, weights: Dict[str, float], metrics: Dict[str, Li
                 if not calls:
                     final_reply = msg.content or ""
                     break
-        if verbose:
-            print(f"\n=== Example: {ex.get('id', 'unknown')} ===")
-            print("Conversation:")
-            for m in result["messages"]:
-                if isinstance(m, HumanMessage):
-                    print(f"Customer: {m.content}")
-                elif isinstance(m, AIMessage):
-                    print(f"Agent: {m.content}")
-                elif isinstance(m, ToolMessage):
-                    print(f"Tool call: {m.tool_call_id} ({m.tool_name})")
-            print("Final reply:", final_reply)
 
-        pred_tool_names = []
-        pred_call_objs  = []
+        # Collect predicted tool calls
+        pred_tool_names: List[str] = []
+        pred_call_objs: List[dict] = []
         for m in result["messages"]:
             if not isinstance(m, AIMessage):
                 continue
             for tc in m.additional_kwargs.get("tool_calls", []):
                 if "function" in tc:
-                    name   = tc["function"]["name"]
+                    name = tc["function"]["name"]
                     params = json.loads(tc["function"]["arguments"])
                 else:
-                    name   = tc.get("name")
+                    name = tc.get("name")
                     params = tc.get("args", {})
                 pred_tool_names.append(name)
                 pred_call_objs.append({"tool": name, "params": params})
 
-        pr = phrase_recall(final_reply, exp_final.get("customer_msg_contains", []))
-        metrics["phrase_recall"].append(pr)
+        # Compute and return metrics
         tm = tool_metrics(pred_tool_names, exp_final.get("tool_calls", []))
-        metrics["tool_recall"].append(tm["tool_recall"])
-        metrics["tool_precision"].append(tm["tool_precision"])
-        metrics["param_accuracy"].append(
-            param_accuracy(pred_call_objs, exp_final.get("tool_calls", []))
-        )
-        metrics["task_success"].append(
-            task_success(final_reply, pred_tool_names, exp_final)
-        )
+        return {
+            "phrase_recall": phrase_recall(final_reply, exp_final.get("customer_msg_contains", [])),
+            "tool_recall": tm["tool_recall"],
+            "tool_precision": tm["tool_precision"],
+            "param_accuracy": param_accuracy(pred_call_objs, exp_final.get("tool_calls", [])),
+            "task_success": task_success(final_reply, pred_tool_names, exp_final),
+        }
+    except Exception as e:
+        print(f"[SKIPPED] example failed with error: {e!r}")
+        return None
+
+def run_evaluation(
+    graph, args, weights: Dict[str, float],
+    metrics: Dict[str, List[float]], verbose: bool = False
+):
+    for raw in pathlib.Path(args.dataset).read_text().splitlines():
+        result = evaluate_single_instance(raw, graph)
+        if result is None:
+            continue
+        # Append to global metrics
+        for k, v in result.items():
+            metrics[k].append(v)
+
+    # Summary
+    print("\n=== Aggregate scores ===")
+    for k, vals in metrics.items():
+        print(f"{k:15s}: {stats.mean(vals):.3f} (n={len(vals)})")
+    total = sum(weights.get(m, 1.0) for m in metrics)
+    overall = sum(stats.mean(metrics[m]) * weights.get(m, 1.0) for m in metrics) / total
+    print(f"\nWeighted overall score: {overall:.3f}")
 
     print("\n=== Aggregate scores ===")
     for k, vals in metrics.items():
