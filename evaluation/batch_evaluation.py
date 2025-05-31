@@ -18,7 +18,7 @@ import importlib.util
 import json
 import pathlib
 import statistics as stats
-
+from observability.loki_logger import log_to_loki
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 def to_lc_message(turn: dict):
@@ -149,7 +149,10 @@ def run_evaluation(
     for raw in pathlib.Path(args.dataset).read_text().splitlines():
         result = evaluate_single_instance(raw, graph)
         if result is None:
+            log_to_loki("batch_eval", "[SKIPPED] evaluation failed or malformed entry.")
             continue
+        else:
+            log_to_loki("batch_eval", f"[METRICS] {json.dumps(result)}")
         # Append to global metrics
         for k, v in result.items():
             metrics[k].append(v)
@@ -171,10 +174,14 @@ def run_evaluation(
     overall = sum(stats.mean(metrics[m]) * w for m, w in active.items()) / total
     print(f"\nWeighted overall score: {overall:.3f}")
 
+    log_lines = [f"{k}: {stats.mean(vals):.3f}" for k, vals in metrics.items()]
+    summary = "Evaluation Summary - " + " | ".join(log_lines)
+    log_to_loki("batch_eval", summary)
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("graph_py")
-    ap.add_argument("dataset")
+    ap.add_argument("--graph_py")
+    ap.add_argument("--dataset")
     ap.add_argument("--weights", nargs="*", default=[])
     ap.add_argument("--verbose", default=False)
     args = ap.parse_args()
@@ -192,6 +199,12 @@ def main():
 
     run_evaluation(graph, args, weights, metrics, verbose=args.verbose)
 
+'''
+Example usage
+python -m evaluation.batch_evaluation \
+  --dataset langgraph/scenarios/ecommerce_customer_support/ecommerce_customer_support_evaluation_set.json \
+  --graph_py langgraph/scenarios/ecommerce_customer_support/customer_support_agent.py
+'''
 
 if __name__ == "__main__":
     main()
