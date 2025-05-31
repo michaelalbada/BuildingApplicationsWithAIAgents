@@ -9,18 +9,15 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 from langgraph.graph import StateGraph, END
 from typing import TypedDict, Sequence, Any
 
-# 1) Define the AgentState TypedDict
 class AgentState(TypedDict):
     messages: Sequence[Any]  # A list of BaseMessage/HumanMessage/…
 
 
-# 2) Initialize MultiServerMCPClient
 mcp_client = MultiServerMCPClient(
     {
         "math": {
             "command": "python3",
-            # Replace with the absolute path to math_server.py
-            "args": ["/absolute/path/to/math_server.py"],
+            "args": ["src/common/mcp/MCP_weather_server.py"],
             "transport": "stdio",
         },
         "weather": {
@@ -31,11 +28,9 @@ mcp_client = MultiServerMCPClient(
     }
 )
 
-# 3) Fetch MCP tools asynchronously
 async def get_mcp_tools() -> list[Tool]:
     return await mcp_client.get_tools()
 
-# 4) Define an async node function that picks a tool based on the last message
 async def call_mcp_tools(state: AgentState) -> dict[str, Any]:
     """
     Given AgentState with state["messages"], decide which MCP tool to call.
@@ -51,7 +46,6 @@ async def call_mcp_tools(state: AgentState) -> dict[str, Any]:
     if "MCP_TOOLS" not in globals():
         MCP_TOOLS = await mcp_client.get_tools()
 
-    # Decide tool name
     if any(token in last_msg for token in ["+", "-", "*", "/", "(", ")"]):
         tool_name = "math"
     elif "weather" in last_msg:
@@ -60,23 +54,17 @@ async def call_mcp_tools(state: AgentState) -> dict[str, Any]:
         # No matching tool: return a default text response
         return {"messages": [{"role": "assistant", "content": "Sorry, I can only answer math or weather queries."}]}
 
-    # Find the Tool object by name
     tool_obj = next(t for t in MCP_TOOLS if t.name == tool_name)
 
-    # Build the MCPRequest payload (LangChain Tool.run expects just the raw user content)
     user_input = messages[-1].content
-    # The `Tool.run()` call under the hood will wrap this as an MCPRequest using default context
     mcp_result: str = await tool_obj.arun(user_input)
 
-    # Return a single assistant message with the raw tool output
     return {
         "messages": [
             {"role": "assistant", "content": mcp_result}
         ]
     }
 
-
-# 5) Construct and compile the LangGraph
 def construct_graph():
     g = StateGraph(AgentState)
     g.add_node("assistant", call_mcp_tools)
@@ -85,8 +73,6 @@ def construct_graph():
 
 GRAPH = construct_graph()
 
-
-# 6) Example: Invoke the graph with a math question
 async def run_math_query():
     initial_state = {
         "messages": [
@@ -98,7 +84,6 @@ async def run_math_query():
     print("Math answer:", assistant_msg.content)
 
 
-# 7) Example: Invoke the graph with a weather question
 async def run_weather_query():
     initial_state = {
         "messages": [
@@ -111,7 +96,6 @@ async def run_weather_query():
 
 
 if __name__ == "__main__":
-    # For demonstration, run both queries sequentially
     loop = asyncio.get_event_loop()
     loop.run_until_complete(run_math_query())
     loop.run_until_complete(run_weather_query())
