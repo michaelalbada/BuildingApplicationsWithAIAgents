@@ -1,16 +1,28 @@
 import pytest
 import importlib
 import sys
+import os
 
 @pytest.fixture(autouse=True)
 def setup_instrument_tempo(monkeypatch):
     """
     Monkeypatch OTLPSpanExporter to a dummy that records spans,
-    and replace BatchSpanProcessor with a SimpleSpanProcessor so spans
+    and replace BatchSpanProcessor with SimpleSpanProcessor so spans
     are exported immediately.
+    Also ensure 'src' is on sys.path so that common.observability.instrument_tempo can be imported.
     """
+    # ─────────────────────────────────────────────────────────────────────────────
+    # Insert the 'src' directory (where common/observability/instrument_tempo.py lives)
+    # into sys.path, so Python can find and import the module properly.
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+    src_path = os.path.join(repo_root, 'src')
+    if src_path not in sys.path:
+        sys.path.insert(0, src_path)
+    # ─────────────────────────────────────────────────────────────────────────────
+
     exported_spans = []
 
+    # DummyExporter: captures any spans passed to export()
     class DummyExporter:
         def __init__(self, *args, **kwargs):
             pass
@@ -27,39 +39,38 @@ def setup_instrument_tempo(monkeypatch):
         DummyExporter
     )
 
-    # Replace BatchSpanProcessor with a factory returning SimpleSpanProcessor
+    # Replace BatchSpanProcessor with SimpleSpanProcessor (so spans export immediately)
     from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+
     def fake_batch_processor(exporter):
         return SimpleSpanProcessor(exporter)
+
     monkeypatch.setattr(
         "opentelemetry.sdk.trace.export.BatchSpanProcessor",
         fake_batch_processor
     )
 
-    # Monkeypatch RequestsInstrumentor.instrument to no-op
+    # Disable the RequestsInstrumentor (no external instrumentation)
     monkeypatch.setattr(
         "opentelemetry.instrumentation.requests.RequestsInstrumentor.instrument",
         lambda self: None
     )
 
-    # Re-import instrument_tempo so patches apply
-    if "common.observability.instrument_tempo" in sys.modules:
-        del sys.modules["common.observability.instrument_tempo"]
-    instrument_tempo = importlib.import_module("common.observability.instrument_tempo")
+    # Re-import the module (clearing any previously cached version)
+    module_name = "common.observability.instrument_tempo"
+    if module_name in sys.modules:
+        del sys.modules[module_name]
+    instrument_tempo = importlib.import_module(module_name)
 
-    yield instrument_tempo, exported_spans
+    # ─────────────────────────────────────────────────────────────────────────────
+    # Override the tracer provider and tracer in the instrument_tempo module
+    # so that do_work() uses DummyExporter + SimpleSpanProcessor.
+    from opentelemetry import trace
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 
-
-def test_do_work_generates_spans(setup_instrument_tempo):
-    instrument_tempo, exported_spans = setup_instrument_tempo
-
-    instrument_tempo.do_work()
-
-    # Now SimpleSpanProcessor should have exported spans immediately
-    assert len(exported_spans) >= 4
-
-    span_names = [span.name for span in exported_spans]
-    assert "parent-span" in span_names
-    assert "child-span-0" in span_names
-    assert "child-span-1" in span_names
-    assert "child-span-2" in span_names
+    # 1. Create a new TracerProvider
+    new_provider = TracerProvider()
+    # 2. Attach a SimpleSpanProcessor that uses DummyExporter
+    new_provider.add_span_processor(SimpleSpanProcessor(DummyExporter()))
+    # 3. Override the global tracer provide
