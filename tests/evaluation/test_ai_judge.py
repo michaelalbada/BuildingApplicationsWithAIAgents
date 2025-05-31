@@ -1,5 +1,5 @@
 import pytest
-from agents.evaluation.ai_judge import AIJudge
+from common.evaluation.ai_judge import AIJudge
 
 class DummyLLM:
     def __init__(self, fixed_response):

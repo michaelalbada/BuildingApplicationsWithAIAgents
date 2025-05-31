@@ -1,5 +1,5 @@
 import pytest
-from agents.evaluation import memory_evaluation
+from common.evaluation import memory_evaluation
 
 def test_precision_recall_f1_perfect_match():
     pred = ["apple", "banana"]
