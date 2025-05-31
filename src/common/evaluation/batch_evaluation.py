@@ -18,7 +18,7 @@ import importlib.util
 import json
 import pathlib
 import statistics as stats
-from observability.loki_logger import log_to_loki
+from src.common.observability.loki_logger import log_to_loki
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 def to_lc_message(turn: dict):
@@ -201,9 +201,9 @@ def main():
 
 '''
 Example usage
-python -m evaluation.batch_evaluation \
-  --dataset langgraph/scenarios/ecommerce_customer_support/ecommerce_customer_support_evaluation_set.json \
-  --graph_py langgraph/scenarios/ecommerce_customer_support/customer_support_agent.py
+python -m src.common.evaluation.batch_evaluation \
+  --dataset src/common/evaluation/scenarios/ecommerce_customer_support_evaluation_set.json \
+  --graph_py src/frameworks/langgraph_agents/ecommerce_customer_support/customer_support_agent.py
 '''
 
 if __name__ == "__main__":

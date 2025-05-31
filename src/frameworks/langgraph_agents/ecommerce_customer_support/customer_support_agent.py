@@ -19,7 +19,7 @@ from langchain.tools import tool
 from langgraph.graph import StateGraph, END
 
 from traceloop.sdk import Traceloop
-from observability.loki_logger import log_to_loki
+from src.common.observability.loki_logger import log_to_loki
 
 os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "http://localhost:4317"
 os.environ["OTEL_EXPORTER_OTLP_INSECURE"] = "true"
