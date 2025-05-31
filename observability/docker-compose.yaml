@@ -1,0 +1,43 @@
+services:
+  loki:
+    image: grafana/loki:2.9.2
+    command: -config.file=/etc/loki/local-config.yaml
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki-config.yaml:/etc/loki/local-config.yaml
+      - ./loki-data:/loki
+
+  grafana:
+    image: grafana/grafana:10.0.3
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-storage:/var/lib/grafana
+  
+  promtail:
+    image: grafana/promtail:2.9.2
+    volumes:
+      - /var/log:/var/log
+      - ./promtail-config.yaml:/etc/promtail/promtail.yaml
+    command: -config.file=/etc/promtail/promtail.yaml
+    depends_on:
+      - loki
+  
+  tempo:
+    image: grafana/tempo:2.7.0
+    command:
+      - "--config.file=/etc/tempo/local-config.yaml"
+    ports:
+      - "4317:4317"   # OTLP/gRPC receiver (for Traceloop → Tempo)
+      - "3200:3200"   # Tempo’s HTTP “query” API (Grafana → Tempo)
+    volumes:
+      - ./tempo-config.yaml:/etc/tempo/local-config.yaml
+      - ./tempo-data:/tempo-data
+
+volumes:
+  grafana-storage:
+  loki-data:
+  tempo-data:

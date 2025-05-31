@@ -1,0 +1,35 @@
+# tempo-config.yaml
+# =================
+# Minimal Tempo 2.7.x configuration (no WAL, no compaction, no schema/limits blocks).
+#   • Disables write-ahead log (WAL) entirely
+#   • Disables compaction (so you don’t need to configure an object store)
+#   • Uses local filesystem for traces under /tempo-data/traces
+#   • Starts an OTLP/GPT receiver on port 4317 and an HTTP “query” API on port 9095.
+
+server:
+  # Tempo HTTP “query” endpoint (for Grafana) and OTLP/GRPC receiver
+  http_listen_address:  0.0.0.0
+  http_listen_port:     3200
+
+distributor:
+  # Enable an OTLP receiver on the gRPC port 4317
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: "0.0.0.0:4317"
+
+ingester:
+  # In‐memory ring (single‐node demo). No WAL section here.
+  lifecycler:
+    ring:
+      kvstore:
+        store: inmemory
+      replication_factor: 1
+
+storage:
+  trace:
+    backend: local
+    local:
+      # Tempo will write raw trace chunks here:
+      path: "/tempo-data/traces"
