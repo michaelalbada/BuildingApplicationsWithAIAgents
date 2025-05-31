@@ -31,8 +31,8 @@ services:
     command:
       - "--config.file=/etc/tempo/local-config.yaml"
     ports:
-      - "4317:4317"   # OTLP/gRPC receiver (for Traceloop → Tempo)
-      - "3200:3200"   # Tempo’s HTTP “query” API (Grafana → Tempo)
+      - "4317:4317" # OTLP/gRPC receiver (for Traceloop → Tempo)
+      - "3200:3200" # Tempo’s HTTP “query” API (Grafana → Tempo)
     volumes:
       - ./tempo-config.yaml:/etc/tempo/local-config.yaml
       - ./tempo-data:/tempo-data

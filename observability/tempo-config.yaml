@@ -10,14 +10,8 @@ server:
   # Tempo HTTP “query” endpoint (for Grafana) and OTLP/GRPC receiver
   http_listen_address:  0.0.0.0
   http_listen_port:     3200
-
-distributor:
-  # Enable an OTLP receiver on the gRPC port 4317
-  receivers:
-    otlp:
-      protocols:
-        grpc:
-          endpoint: "0.0.0.0:4317"
+  grpc_listen_address: 0.0.0.0
+  grpc_listen_port: 4318
 
 ingester:
   # In‐memory ring (single‐node demo). No WAL section here.
