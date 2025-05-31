@@ -55,9 +55,7 @@ result = graph.invoke(
         ]
     }
 )
-#print(graph)
 
-# Print the messages from the result
 print("Conversation Messages:")
 for idx, message in enumerate(result["messages"], start=1):
     if isinstance(message, HumanMessage):
