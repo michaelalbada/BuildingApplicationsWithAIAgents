@@ -1,10 +1,4 @@
-<p align="center">
-  <img alt="Agents Logo" src="https://raw.githubusercontent.com/your-org/agents/main/logo.png" width="180" />
-</p>
-
-# Agents Framework Repository
-
-**A multi-framework, scenario-driven platform for building, evaluating, and observing AI agents.**
+# Building Applications with AI Agents
 
 [Overview](#overview) • [Book](#book) • [Features](#features) • [Installation](#installation) • [Usage](#usage) • [Directory Structure](#directory-structure) • [Examples](#examples) • [Testing](#testing) • [Contributing](#contributing) • [License](#license)
 
