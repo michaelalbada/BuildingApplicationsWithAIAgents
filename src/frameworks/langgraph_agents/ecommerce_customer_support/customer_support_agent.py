@@ -8,7 +8,7 @@ import os
 import json
 import operator
 import builtins
-from typing import Annotated, Sequence, TypedDict
+from typing import Annotated, Sequence, TypedDict, Optional
 
 from langchain_openai.chat_models import ChatOpenAI
 from langchain.schema import AIMessage, BaseMessage, HumanMessage, SystemMessage
@@ -21,6 +21,8 @@ from langgraph.graph import StateGraph, END
 from traceloop.sdk import Traceloop
 from src.common.observability.loki_logger import log_to_loki
 
+
+
 os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "http://localhost:4317"
 os.environ["OTEL_EXPORTER_OTLP_INSECURE"] = "true"
 
@@ -28,7 +30,6 @@ os.environ["OTEL_EXPORTER_OTLP_INSECURE"] = "true"
 def send_customer_message(order_id: str, text: str) -> str:
     """Send a plain response to the customer."""
     print(f"[TOOL] send_customer_message → {text}")
-    # Log this tool invocation to Loki
     log_to_loki("tool.send_customer_message", f"order_id={order_id}, text={text}")
     return "sent"
 
@@ -47,25 +48,31 @@ def cancel_order(order_id: str) -> str:
     return "cancelled"
 
 @tool
-def modify_order(order_id: str, shipping_address: dict) -> str:
+def update_address_for_order(order_id: str, shipping_address: dict) -> str:
     """Change the shipping address for a pending order."""
-    print(f"[TOOL] modify_order(order_id={order_id}, address={shipping_address})")
-    log_to_loki("tool.modify_order", f"order_id={order_id}, address={shipping_address}")
+    print(f"[TOOL] update_address_for_order(order_id={order_id}, address={shipping_address})")
+    log_to_loki("tool.update_address_for_order", f"order_id={order_id}, address={shipping_address}")
     return "address_updated"
 
-TOOLS = [send_customer_message, issue_refund, cancel_order, modify_order]
+TOOLS = [send_customer_message, issue_refund, cancel_order, update_address_for_order]
 
 Traceloop.init(disable_batch=True, app_name="customer_support_agent")
 llm = ChatOpenAI(model="gpt-4o", temperature=0.0, callbacks=[StreamingStdOutCallbackHandler()],  
     verbose=True).bind_tools(TOOLS)
 
 class AgentState(TypedDict):
-    order: dict
+    order: Optional[dict]  # Make order optional
     messages: Annotated[Sequence[BaseMessage], operator.add]
 
 def call_model(state: AgentState):
     history = state["messages"]
-    order_json = json.dumps(state["order"], ensure_ascii=False)
+    
+    # Handle missing or incomplete order data gracefully
+    order = state.get("order", {})
+    if not order:
+        order = {"order_id": "UNKNOWN", "status": "unknown", "total": 0.0}
+    
+    order_json = json.dumps(order, ensure_ascii=False)
     system_prompt = (
         "You are a helpful e-commerce support agent.\n"
         "When you act, you MUST do exactly TWO steps in order:\n"
