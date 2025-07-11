@@ -14,14 +14,14 @@ This repository provides a **unified, multi-framework platform** for designing, 
 * **Built-in observability** (Loki logging & OpenTelemetry/Tempo).
 * **Unit tests** for core utilities and telemetry setup.
 
-Whether you’re building an e-commerce support bot, a flight-booking assistant, or anything in between, this codebase helps you scale from prototype to production coverage—while maintaining consistency and reusability.
+Whether you’re building an e-commerce support bot, an IT support desk assistant, a voice agent, or anything in between, this codebase helps you scale from prototype to production coverage—while maintaining consistency and reusability.
 
 ---
 
 ## Book
 
-This repository **accompanies** the O’Reilly book
-[**Building Applications with AI: From Integration to Innovation**](https://www.oreilly.com/library/view/building-applications-with/9781098176495/).
+This repository accompanies the O’Reilly Media book
+[**Building Applications with AI Agents: Designing and Implementing Multi-Agent Systems**](https://www.oreilly.com/library/view/building-applications-with/9781098176495/).
 All scenarios, architectural patterns, and observability examples reflect the lessons and code samples from the book. Feel free to follow along chapter by chapter or dive straight into the code!
 
 <div align="center">
