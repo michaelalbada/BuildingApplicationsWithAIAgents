@@ -119,16 +119,14 @@ def build_model(model_name: str, tokenizer, load_4bit: bool = False):
         "attn_implementation": "eager",
         "device_map": "auto",
     }
-    if load_4bit:
-        kwargs["quantization_config"] = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_compute_dtype=torch.bfloat16,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_use_double_quant=True,
-        )
+    kwargs["quantization_config"] = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_compute_dtype=torch.bfloat16,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_use_double_quant=True,
+    )
     model = AutoModelForCausalLM.from_pretrained(model_name, **kwargs)
     model.resize_token_embeddings(len(tokenizer))
-    model.to(torch.bfloat16)
     return model
 
 ###############################################################################
@@ -183,7 +181,7 @@ def train(
         max_grad_norm=1.0,
         warmup_ratio=0.1,
         lr_scheduler_type="cosine",
-        report_to="tensorboard",
+        report_to=None,
         bf16=True,
         gradient_checkpointing=True,
         gradient_checkpointing_kwargs={"use_reentrant": False},
@@ -210,7 +208,7 @@ def train(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Fine‑tune an LLM for function calling with LoRA.")
-    parser.add_argument("--model", default="google/gemma-2-2b-it", help="Base model name or path")
+    parser.add_argument("--model", default="microsoft/Phi-3-mini-4k-instruct", help="Base model name or path")
     parser.add_argument("--dataset", default="Jofthomas/hermes-function-calling-thinking-V1", help="HF dataset")
     parser.add_argument("--output_dir", default="gemma-2-2B-function-call-ft", help="Where to save checkpoints")
     parser.add_argument("--epochs", type=int, default=1)
