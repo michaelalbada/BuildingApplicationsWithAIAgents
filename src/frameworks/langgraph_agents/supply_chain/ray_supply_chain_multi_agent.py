@@ -1,14 +1,16 @@
 from __future__ import annotations
 """
-supply_chain_logistics_agent_ray.py
-LangGraph workflow for a multi-agent Supply Chain & Logistics Management system, revised to use Ray actors for decoupling.
+supply_chain_logistics_agent_ray_per_session.py
+LangGraph workflow for a multi-agent Supply Chain & Logistics Management system, revised to use Ray actors for decoupling with per-session isolation.
 Handles inventory management, shipping operations, supplier relations, and warehouse optimization through specialized agents as Ray actors.
-The supervisor determines the specialist and invokes the actor remotely, processing tasks asynchronously with actor-internal state.
+Each session (identified by operation_id) gets its own actor instances per specialist type, ensuring isolated state and sequential execution per session.
+The supervisor determines the specialist and invokes the session-specific actor remotely via a SessionManager.
 """
 
 import os
 import json
-from typing import Annotated, Sequence, TypedDict, Optional
+import time
+from typing import Annotated, Sequence, TypedDict, Optional, Dict
 
 import ray
 from langchain_openai.chat_models import ChatOpenAI
@@ -147,7 +149,7 @@ def handle_compliance(compliance_type: str = None, **kwargs) -> str:
 
 SUPPLIER_TOOLS = [evaluate_suppliers, handle_compliance, send_logistics_response]
 
-Traceloop.init(disable_batch=True, app_name="supply_chain_logistics_agent_ray")
+Traceloop.init(disable_batch=True, app_name="supply_chain_logistics_agent_ray_per_session")
 llm = ChatOpenAI(model="gpt-4o", temperature=0.0, callbacks=[StreamingStdOutCallbackHandler()], verbose=True)
 
 # Bind tools to specialized LLMs
@@ -159,7 +161,7 @@ class AgentState(TypedDict):
     operation: Optional[dict]  # Supply chain operation information
     messages: Annotated[Sequence[BaseMessage], operator.add]
 
-# Ray Actor for Specialists
+# Ray Actor for Specialists (per-session isolation)
 @ray.remote
 class SpecialistActor:
     def __init__(self, name: str, specialist_llm, tools: list, system_prompt: str):
@@ -167,7 +169,7 @@ class SpecialistActor:
         self.llm = specialist_llm
         self.tools = {t.name: t for t in tools}
         self.prompt = system_prompt
-        self.internal_state = {}  # Persistent state, e.g., for tracking operations
+        self.internal_state = {}  # Isolated per-session state, e.g., for tracking within the session
 
     def process_task(self, operation: dict, messages: Sequence[BaseMessage]):
         if not operation:
@@ -192,17 +194,38 @@ class SpecialistActor:
             second = self.llm.invoke(full + result_messages)
             result_messages.append(second)
 
-        # Update internal state (example: track processed operations)
-        op_id = operation.get("operation_id", "unknown")
-        self.internal_state[op_id] = {"status": "processed", "timestamp": time.time()}
+        # Update internal state (example: track processed steps within session)
+        step_key = str(len(self.internal_state) + 1)  # Or use a more specific key
+        self.internal_state[step_key] = {"status": "processed", "timestamp": time.time()}
 
         return {"messages": result_messages}
 
-    def get_state(self, op_id: str):
-        return self.internal_state.get(op_id)
+    def get_state(self):
+        return self.internal_state  # Return entire session state
 
-# Supervisor: Determines specialist and invokes Ray actor remotely
-def supervisor_invoke(operation: dict, messages: Sequence[BaseMessage], actors: dict):
+# Session Manager Actor: Tracks per-session specialist actors
+@ray.remote
+class SessionManager:
+    def __init__(self):
+        self.sessions: Dict[str, Dict[str, ray.actor.ActorHandle]] = {}  # session_id -> {agent_name: actor}
+
+    def get_or_create_actor(self, session_id: str, agent_name: str, llm, tools: list, prompt: str):
+        if session_id not in self.sessions:
+            self.sessions[session_id] = {}
+        if agent_name not in self.sessions[session_id]:
+            actor = SpecialistActor.remote(agent_name, llm, tools, prompt)
+            self.sessions[session_id][agent_name] = actor
+        return self.sessions[session_id][agent_name]
+
+    def get_session_state(self, session_id: str, agent_name: str):
+        if session_id in self.sessions and agent_name in self.sessions[session_id]:
+            actor = self.sessions[session_id][agent_name]
+            return actor.get_state.remote()  # Returns future
+        return None
+
+# Supervisor: Determines specialist and invokes session-specific Ray actor remotely via manager
+def supervisor_invoke(operation: dict, messages: Sequence[BaseMessage], manager: ray.actor.ActorHandle, llms: dict, tools_dict: dict, prompts: dict):
+    session_id = operation.get("operation_id", "UNKNOWN")
     operation_json = json.dumps(operation, ensure_ascii=False)
     
     supervisor_prompt = (
@@ -221,15 +244,19 @@ def supervisor_invoke(operation: dict, messages: Sequence[BaseMessage], actors: 
     response = llm.invoke(full)
     agent_name = response.content.strip().lower()
     
-    actor = actors.get(agent_name)
-    if actor:
-        # Invoke remotely (returns ObjectRef)
-        result_ref = actor.process_task.remote(operation, messages)
-        # Get the result (blocks until done)
-        result = ray.get(result_ref)
-        return result
-    else:
+    if agent_name not in llms:
         raise ValueError(f"Unknown agent: {agent_name}")
+    
+    # Get or create session-specific actor
+    actor_ref = manager.get_or_create_actor.remote(
+        session_id, agent_name, llms[agent_name], tools_dict[agent_name], prompts[agent_name]
+    )
+    actor = ray.get(actor_ref)  # Get the actor handle
+    
+    # Invoke remotely
+    result_ref = actor.process_task.remote(operation, messages)
+    result = ray.get(result_ref)
+    return result
 
 if __name__ == "__main__":
     ray.init(ignore_reinit_error=True)  # Local cluster for demo; configure for distributed
@@ -260,28 +287,40 @@ if __name__ == "__main__":
         "Consider performance, regulations, and relationships."
     )
 
-    # Instantiate actors
-    inventory_actor = SpecialistActor.remote("inventory", inventory_llm, INVENTORY_TOOLS, inventory_prompt)
-    transportation_actor = SpecialistActor.remote("transportation", transportation_llm, TRANSPORTATION_TOOLS, transportation_prompt)
-    supplier_actor = SpecialistActor.remote("supplier", supplier_llm, SUPPLIER_TOOLS, supplier_prompt)
-
-    actors = {
-        "inventory": inventory_actor,
-        "transportation": transportation_actor,
-        "supplier": supplier_actor
+    prompts = {
+        "inventory": inventory_prompt,
+        "transportation": transportation_prompt,
+        "supplier": supplier_prompt
     }
+
+    llms = {
+        "inventory": inventory_llm,
+        "transportation": transportation_llm,
+        "supplier": supplier_llm
+    }
+
+    tools_dict = {
+        "inventory": INVENTORY_TOOLS,
+        "transportation": TRANSPORTATION_TOOLS,
+        "supplier": SUPPLIER_TOOLS
+    }
+
+    # Create session manager
+    manager = SessionManager.remote()
 
     # Example invocation
     example = {"operation_id": "OP-12345", "type": "inventory_management", "priority": "high", "location": "Warehouse A"}
     convo = [HumanMessage(content="We're running critically low on SKU-12345. Current stock is 50 units but we have 200 units on backorder. What's our reorder strategy?")]
 
-    result = supervisor_invoke(example, convo, actors)
+    result = supervisor_invoke(example, convo, manager, llms, tools_dict, prompts)
     for m in result["messages"]:
         print(f"{m.type}: {m.content}")
 
-    # Optional: Query actor state
-    state_ref = inventory_actor.get_state.remote("OP-12345")
-    print("Actor state:", ray.get(state_ref))
+    # Optional: Query session-specific actor state
+    state_ref = manager.get_session_state.remote("OP-12345", "inventory")
+    if state_ref:
+        state = ray.get(ray.get(state_ref))  # Resolve nested future
+        print("Session actor state:", state)
 
     # Shutdown Ray
     ray.shutdown()
