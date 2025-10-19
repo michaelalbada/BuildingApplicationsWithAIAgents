@@ -276,6 +276,49 @@ def construct_graph():
 
 graph = construct_graph()
 
+# Actor Node: Generates candidate plans
+def actor_node(state: AgentState):
+    history = state["messages"]
+    actor_prompt = "Generate 3 candidate supply chain plans as JSON list: [{'plan': 'description', 'tools': [...]}]"
+    response = llm.invoke([SystemMessage(content=actor_prompt)] + history)
+    state["candidates"] = json.loads(response.content)
+    return state
+
+# Critic Node: Evaluates and selects/iterates
+def critic_node(state: AgentState):
+    candidates = state["candidates"]
+    history = state["messages"]
+    critic_prompt = f"Score candidates {candidates} on scale 1-10 for feasibility, cost, risk. Select best if >8, else request regeneration."
+    response = llm.invoke([SystemMessage(content=critic_prompt)] + history)
+    eval = json.loads(response.content)
+    if eval['best_score'] > 8:
+        winning_plan = eval['selected']
+        # Execute winning plan's tools (similar to specialist execution)
+        messages = []
+        for tool_info in winning_plan['tools']:
+            tc = {'name': tool_info['tool'], 'args': tool_info['args'], 'id': 'dummy'}
+            fn = next(t for t in all_tools if t.name == tc['name'])
+            out = fn.invoke(tc["args"])
+            messages.append(ToolMessage(content=str(out), tool_call_id=tc["id"]))
+        # Send response
+        send_fn.invoke({"message": winning_plan['plan']})
+        return {"messages": history + messages}
+    else:
+        # Iterate: Add feedback to history for actor
+        return {"messages": history + [AIMessage(content="Regenerate with improvements: " + eval['feedback'])]}
+
+def construct_actor_critic_graph():
+    g = StateGraph(AgentState)
+    g.add_node("actor", actor_node)
+    g.add_node("critic", critic_node)
+    
+    g.set_entry_point("actor")
+    g.add_edge("actor", "critic")
+    # Loop back if not approved (conditional)
+    g.add_conditional_edges("critic", lambda s: "actor" if "regenerate" in s["messages"][-1].content.lower() else END)
+    
+    return g.compile()
+
 if __name__ == "__main__":
     example = {"operation_id": "OP-12345", "type": "inventory_management", "priority": "high", "location": "Warehouse A"}
     convo = [HumanMessage(content="We're running critically low on SKU-12345. Current stock is 50 units but we have 200 units on backorder. What's our reorder strategy?")]

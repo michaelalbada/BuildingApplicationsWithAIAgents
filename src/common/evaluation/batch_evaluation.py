@@ -166,6 +166,12 @@ def evaluate_single_instance(raw: str, graph) -> Optional[Dict[str, float]]:
 
         result = graph.invoke(initial_state)
 
+        routing_pred = None
+        for msg in result["messages"]:
+            if isinstance(msg, AIMessage) and msg.content.strip().lower() in ["inventory", "transportation", "supplier"]:
+                routing_pred = msg.content.strip().lower()
+                break
+
         final_reply = ""
         for msg in reversed(result["messages"]):
             if isinstance(msg, AIMessage):
@@ -189,14 +195,20 @@ def evaluate_single_instance(raw: str, graph) -> Optional[Dict[str, float]]:
                 pred_tool_names.append(name)
                 pred_call_objs.append({"tool": name, "params": params})
 
+        expected_routing = ex.get("expected_routing", "").lower()
+        routing_acc = 1.0 if routing_pred == expected_routing else 0.0
+
         tm = tool_metrics(pred_tool_names, exp_final.get("tool_calls", []))
+        
         return {
             "phrase_recall": phrase_recall(final_reply, exp_final.get("customer_msg_contains", [])),
             "tool_recall": tm["tool_recall"],
             "tool_precision": tm["tool_precision"],
             "param_accuracy": param_accuracy(pred_call_objs, exp_final.get("tool_calls", [])),
             "task_success": task_success(final_reply, pred_tool_names, exp_final),
+            "routing_accuracy": routing_acc,
         }
+
     except Exception as e:
         print(f"[SKIPPED] example failed with error: {e!r}")
         import traceback
@@ -222,6 +234,8 @@ def run_evaluation(
                 print(f"[METRICS] {json.dumps(result)}")
         # Append to global metrics
         for k, v in result.items():
+            if k not in metrics:
+                metrics[k] = []
             metrics[k].append(v)
 
     print("\n=== Aggregate scores ===")
