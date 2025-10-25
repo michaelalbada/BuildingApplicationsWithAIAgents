@@ -14,7 +14,7 @@ Example: Autogen agent that uses MCP tools (math and weather).
 import asyncio
 from typing import List
 
-from langchain.tools import Tool
+from langchain_core.tools import tool
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
 from openai_autogen import (

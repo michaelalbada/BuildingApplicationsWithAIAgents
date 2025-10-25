@@ -1,5 +1,5 @@
 import pytest
-from langchain.schema import HumanMessage
+from langchain_core.messages import HumanMessage
 from frameworks.langgraph_agents.ecommerce_customer_support.customer_support_agent import graph
 
 def extract_tool_names(messages):
