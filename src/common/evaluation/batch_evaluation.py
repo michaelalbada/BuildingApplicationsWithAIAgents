@@ -4,7 +4,7 @@ Handles multi-turn conversations and surfaces diagnostics, including parameter a
 """
 from __future__ import annotations
 import builtins
-from langchain.schema import BaseMessage
+from langchain_core.messages import BaseMessage
 import operator
 from typing import Dict, List, Annotated, Sequence, Optional
 builtins.Annotated = Annotated

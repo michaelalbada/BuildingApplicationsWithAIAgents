@@ -9,12 +9,12 @@ import json
 import operator
 from typing import Annotated, Sequence, TypedDict, Optional
 
-from langchain_openai.chat_models import ChatOpenAI
-from langchain.schema import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_core.messages.tool import ToolMessage
-from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
+from langchain_core.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 
-from langchain.tools import tool
+from langchain_core.tools import tool
 from langgraph.graph import StateGraph, END
 
 from traceloop.sdk import Traceloop
